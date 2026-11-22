@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { api, authHeaders } from "./client";
+import { api, apiUrl, authHeaders } from "./client";
 import { streamEvents } from "./sse";
 import type { CheckOut, CitationSummary } from "./types";
 import { cleanJson } from "../lib/text";
@@ -52,7 +52,7 @@ export function useLiveCheck(id: string) {
     const controller = new AbortController();
     setLive(true);
     streamEvents(
-      `/api/v1/checks/${id}/events`,
+      apiUrl(`/api/v1/checks/${id}/events`),
       authHeaders(),
       ({ event, data }) => {
         const payload = JSON.parse(data, cleanJson);
