@@ -62,9 +62,46 @@ def pdf_to_text(data: bytes, max_pages: int = MAX_PDF_PAGES) -> str:
             pages.append(textpage.get_text_range())
             textpage.close()
             page.close()
-        return strip_soft_hyphens("\n".join(pages))
+        return strip_soft_hyphens("\n".join(strip_running_headers(pages)))
     finally:
         pdf.close()
+
+
+_EDGE_LINES = 4  # how many lines at the top and bottom of a page can be a running header/footer
+
+
+def _normalise_line(line: str) -> str:
+    return re.sub(r"\d+", "#", " ".join(line.split())).lower()
+
+
+def strip_running_headers(pages: list[str]) -> list[str]:
+    """Remove page headers/footers ("Scientific Reports | (2023) 13:14045 | …", bare page
+    numbers). They repeat on most pages, and when left in they get glued onto the neighbouring
+    reference, which then looks like a wrong DOI or a fabricated "citation"."""
+    if len(pages) < 3:
+        return pages
+    split = [p.replace("\r\n", "\n").split("\n") for p in pages]
+    counts: dict[str, int] = {}
+    for lines in split:
+        content = [ln for ln in lines if ln.strip()]
+        edge = content[:_EDGE_LINES] + content[-_EDGE_LINES:]
+        for key in {_normalise_line(ln) for ln in edge}:
+            counts[key] = counts.get(key, 0) + 1
+    threshold = max(3, int(len(pages) * 0.4))
+    repeated = {k for k, n in counts.items() if n >= threshold and len(k) > 3}
+    cleaned = []
+    for lines in split:
+        content_idx = [i for i, ln in enumerate(lines) if ln.strip()]
+        edge_idx = set(content_idx[:_EDGE_LINES] + content_idx[-_EDGE_LINES:])
+        keep = []
+        for i, ln in enumerate(lines):
+            if i in edge_idx and (
+                _normalise_line(ln) in repeated or re.fullmatch(r"\s*\d{1,4}\s*", ln)
+            ):
+                continue
+            keep.append(ln)
+        cleaned.append("\n".join(keep))
+    return cleaned
 
 
 def docx_to_text(data: bytes) -> str:

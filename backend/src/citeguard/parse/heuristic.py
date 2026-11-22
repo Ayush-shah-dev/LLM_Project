@@ -34,7 +34,10 @@ _VANCOUVER_AUTHOR = (
 _VANCOUVER_RE = re.compile(rf"^(?P<authors>(?:{_VANCOUVER_AUTHOR})+(?:et al\.\s*)?)(?P<rest>.+)$")
 # A "title" that is really the tail of an author list the parser could not read
 _AUTHOR_LIST_RE = re.compile(rf"^(?:{_VANCOUVER_AUTHOR}){{2,}}|\bet al\b")
-_YEAR_START_RE = re.compile(r"^(?:1[6-9]|20)\d{2}\b")
+# "Smith, J. K., Lee, A. & Wang-Li, B. " at the start of a reference (surname, initials, …)
+_AUTHOR_UNIT = r"[A-Z][\w'’\-]+(?:\s[A-Z][\w'’\-]+)?,\s*(?:[A-Z]\.\s*)+"
+_AUTHOR_PREFIX_RE = re.compile(rf"^(?:{_AUTHOR_UNIT}(?:,\s*&?\s*|&\s*|and\s+)?)+")
+_YEAR_START_RE =re.compile(r"^(?:1[6-9]|20)\d{2}\b")
 _LOWER_VENUE_RE = re.compile(r"^(?P<title>.+)\.\s+(?P<venue>[a-z][^.]{0,80})$")
 _CONF_RE = re.compile(
     r"proceedings|conference|workshop|symposium|\bconf\b|neurips|\bnips\b|icml|iclr|cvpr|"
@@ -56,9 +59,11 @@ def _strip_markdown(text: str) -> str:
 
 def _volume_issue_pages(text: str) -> tuple[str | None, str | None, str | None]:
     volume = issue = pages = None
-    m = re.search(r"\b(\d{1,4})\s*\((\d{1,4}(?:[-–]\d{1,4})?)\)", text)
-    if m:
+    for m in re.finditer(r"\b(\d{1,4})\s*\((\d{1,4}(?:[-–]\d{1,4})?)\)", text):
+        if _YEAR_START_RE.match(m.group(2)) and len(m.group(2)) == 4:
+            continue  # "57 (2004)" is pages then year, not volume 57 issue 2004
         volume, issue = m.group(1), m.group(2)
+        break
     m = re.search(r"\bvol(?:ume)?\.?\s*(\d{1,4})", text, re.IGNORECASE)
     if m:
         volume = m.group(1)
@@ -75,6 +80,10 @@ def _volume_issue_pages(text: str) -> tuple[str | None, str | None, str | None]:
         m = re.search(r",\s*(\d{1,4})\s*,\s*(?:pp?\.?\s*)?[A-Za-z]?\d", text)
         if m:
             volume = m.group(1)
+    if volume is None:  # Nature/Cureus style: "J. Behav. Decis. Mak. 17, 39–57 (2004)"
+        m = re.search(r"[A-Za-z.]\s+(\d{1,4}),\s*(?:pp?\.?\s*)?[A-Za-z]?\d", text)
+        if m:
+            volume = m.group(1)
     return volume, issue, pages
 
 
@@ -82,7 +91,9 @@ def _venue_from(segment: str) -> str | None:
     seg = _strip_markdown(segment)
     seg = re.sub(r"^\s*(?:in|In)[:\s]+", "", seg)
     seg = re.split(
-        r",\s*(?:vol|no|pp|p\.|\d)|\s+\d{1,4}\s*\(|;\s*\d|\bvol\.|\bpp\.", seg, maxsplit=1
+        r",\s*(?:vol|no|pp|p\.|\d)|\s+\d{1,4}\s*(?:\(|,|$)|;\s*\d|\bvol\.|\bpp\.",
+        seg,
+        maxsplit=1,
     )[0]
     seg = _YEAR_RE.sub("", seg).strip(" .,;:()")
     return seg or None
@@ -193,7 +204,14 @@ def parse_heuristic(raw: str, title_hint: str | None = None) -> ParsedReference:
         confidence = 0.75
     else:  # Vancouver / generic sentence-split
         segments = [s.strip() for s in _SENT_SPLIT_RE.split(text) if s.strip()]
-        if len(segments) >= 2:
+        lead = _AUTHOR_PREFIX_RE.match(segments[0]) if segments else None
+        if len(segments) >= 2 and lead and len(segments[0]) - lead.end() >= 10:
+            # "Smith, J. & Lee, K. Title of the work. Journal 12, 3–9 (2020)": initials do
+            # not end a sentence, so the title is glued to the author list. Split after it.
+            authors_part, title = lead.group(0), segments[0][lead.end() :]
+            rest = ". ".join(segments[1:])
+            confidence = 0.65
+        elif len(segments) >= 2:
             authors_part, title = segments[0], segments[1]
             rest = ". ".join(segments[2:])
             m = re.match(r"^(.*?)[,.]?\s*\(?((?:1[6-9]|20)\d{2})\)?$", authors_part)
@@ -227,6 +245,14 @@ def parse_heuristic(raw: str, title_hint: str | None = None) -> ParsedReference:
         if _AUTHOR_LIST_RE.search(title + ". "):
             confidence = min(confidence, 0.3)
     ctype = _infer_type(raw, venue, bool(ids.arxiv_id))
+    # A news/web item: a URL but no DOI, arXiv id, volume or pages. Scholarly databases do not
+    # index these, so it must not be judged "fabricated" for being absent from them.
+    if (
+        ctype in (CitationType.UNKNOWN, CitationType.ARTICLE_JOURNAL)
+        and re.search(r"https?://|www\.", raw)
+        and not (ids.doi or ids.arxiv_id or volume or pages)
+    ):
+        ctype = CitationType.WEBPAGE
     publisher = None
     if ctype == CitationType.BOOK and venue and _BOOK_RE.search(venue):
         publisher, venue = venue, None

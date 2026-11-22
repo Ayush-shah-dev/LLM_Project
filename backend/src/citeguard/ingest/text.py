@@ -12,7 +12,16 @@ _HEADING_RE = re.compile(
     r"reference list|cited works|further reading)\s*:?\s*(?:\*\*|__)?\s*:?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
-_NUMBERED_BRACKET_RE = re.compile(r"^\s*\[(\d{1,3})\]\s+", re.MULTILINE)
+# Sections that follow the reference list; the list ends at the first one.
+_END_RE = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*|\*\*|__)?\s*(?:author contributions?|competing interests?|"
+    r"conflicts? of interest|declaration of competing interests?|acknowledge?ments?|"
+    r"funding|data availability|additional information|supplementary (?:information|material)|"
+    r"appendix|appendices|publisher.s note|open access|correspondence|ethics statement|"
+    r"reprints and permissions|about the authors?)\b[^\n]{0,60}$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_NUMBERED_BRACKET_RE =re.compile(r"^\s*\[(\d{1,3})\]\s+", re.MULTILINE)
 _NUMBERED_DOT_RE = re.compile(r"^\s*(\d{1,3})[.)]\s+", re.MULTILINE)
 _BULLET_RE = re.compile(r"^\s*[-*•·]\s+", re.MULTILINE)
 _YEAR_RE = re.compile(r"\b(1[6-9]\d{2}|20\d{2})[a-z]?\b")
@@ -81,6 +90,9 @@ def extract_references(text: str) -> TextReferences:
     if headings:
         last = headings[-1]
         body, block = text[: last.start()], text[last.end() :]
+        end = _END_RE.search(block)
+        if end:  # back-matter after the list ("Author contributions", "Publisher's note", …)
+            block = block[: end.start()]
     else:
         body, block = "", text
 

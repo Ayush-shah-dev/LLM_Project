@@ -170,3 +170,67 @@ def test_abbreviations_and_portuguese_initials() -> None:
     )
     assert p.title == "PREVENTION OF HIV IN PEOPLE WHO LIVE IN A STREET SITUATION"
     assert [a.family for a in p.authors][:3] == ["Brito", "de Oliveira", "Borges"]
+
+
+# --- regressions found by checking a real PDF (Walters & Wilder 2023) ---------------------------
+
+
+def test_running_headers_are_stripped_from_pdf_pages():
+    from citeguard.ingest.documents import strip_running_headers
+
+    pages = [
+        f"{n}\nVol.:(0123456789)\nScientific Reports | (2023) 13:14045 |\n"
+        + "\n".join(f"Unique body line {n}-{k} about topic {n * k}." for k in range(10))
+        + "\n"
+        for n in range(1, 6)
+    ]
+    out = "\n".join(strip_running_headers(pages))
+    assert "Scientific Reports" not in out
+    assert "Vol.:" not in out
+    assert "Unique body line 3-4 about topic 12." in out
+
+
+def test_reference_list_ends_at_back_matter():
+    from citeguard.ingest.text import extract_references
+
+    text = (
+        "Intro text.\nReferences\n"
+        "1. Price, P. C. & Stone, E. R. Intuitive evaluation of likelihood judgment producers: "
+        "Evidence for a confidence heuristic. J. Behav. Decis. Mak. 17, 39–57 (2004).\n"
+        "Author contributions\nConceptualization: W.H.W.\n"
+        "Additional information\nSee https://doi.org/10.1038/s41598-023-41032-5 .\n"
+    )
+    refs = extract_references(text)
+    assert len(refs.entries) == 1
+    assert "10.1038" not in refs.entries[0]
+
+
+def test_nature_style_reference_parses_title_volume_pages():
+    from citeguard.parse.heuristic import parse_heuristic
+
+    p = parse_heuristic(
+        "Price, P. C. & Stone, E. R. Intuitive evaluation of likelihood judgment producers: "
+        "Evidence for a confidence heuristic. J. Behav. Decis. Mak. 17, 39–57 (2004)."
+    )
+    assert p.title.startswith("Intuitive evaluation")
+    assert (p.volume, p.pages, p.year) == ("17", "39-57", 2004)
+    assert p.container_title == "J. Behav. Decis. Mak"
+
+    q = parse_heuristic(
+        "Bhattacharyya, M., Miller, V. M., Bhattacharyya, D. & Miller, L. E. High rates of "
+        "fabricated and inaccurate references in ChatGPT-generated medical content. "
+        "Cureus 15, e39238 (2023)."
+    )
+    assert q.title.startswith("High rates of fabricated")
+    assert q.container_title == "Cureus"
+
+
+def test_news_item_with_url_is_a_webpage_not_a_journal_article():
+    from citeguard.domain.models import CitationType
+    from citeguard.parse.heuristic import parse_heuristic
+
+    p = parse_heuristic(
+        "Stokel-Walker, C. AI bot ChatGPT writes smart essays. Nature. "
+        "https://www.nature.com/articles/d41586-022-04397-7 (2022)."
+    )
+    assert p.type == CitationType.WEBPAGE

@@ -15,12 +15,12 @@ database password, or Groq key in the frontend.
 2. In the project dashboard, select **Connect**, then choose **Session pooler**. This is the
    reliable choice for Render's IPv4 network. Copy the connection string.
 3. Change its scheme from `postgresql://` to `postgresql+asyncpg://` and append
-   `?sslmode=require` if it is not present. Percent-encode reserved characters in the password.
+   `?ssl=require` if it is not present. Percent-encode reserved characters in the password.
 
 Example only (do not copy the host/user names literally):
 
 ```text
-postgresql+asyncpg://postgres.PROJECT_REF:ENCODED_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require
+postgresql+asyncpg://postgres.PROJECT_REF:ENCODED_PASSWORD@POOLER_HOST:5432/postgres?ssl=require
 ```
 
 Do not enable or use the Supabase Data API for CiteGuard; the backend connects to Postgres
