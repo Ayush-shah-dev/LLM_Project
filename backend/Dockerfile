@@ -19,4 +19,4 @@ COPY alembic ./alembic
 USER citeguard
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
-CMD ["uvicorn", "citeguard.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn citeguard.api.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]

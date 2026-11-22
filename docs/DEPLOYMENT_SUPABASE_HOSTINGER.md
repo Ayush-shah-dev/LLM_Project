@@ -36,7 +36,7 @@ Create a **Web Service** from this Git repository.
 | Dockerfile path | `backend/Dockerfile` |
 | Docker context directory | `backend` |
 | Health check path | `/healthz` |
-| Docker command | `sh -c "alembic upgrade head && uvicorn citeguard.api.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"` |
+| Docker command | Leave blank (the image runs migrations and starts the API itself) |
 
 Set these environment variables in Render's **Environment** page:
 
@@ -62,8 +62,8 @@ LOG_JSON=true
 initial low-traffic deployment. For higher throughput, use a Redis service and a second Render
 worker before switching to `JOB_BACKEND=arq`.
 
-After the first successful deployment, open `https://YOUR-API.onrender.com/docs`. The start
-command applies the Alembic migration before the API starts. Create an application API key once:
+After the first successful deployment, open `https://YOUR-API.onrender.com/docs`. The container
+applies the Alembic migration before the API starts. Create an application API key once:
 
 ```bash
 # Run in Render's service shell.
