@@ -12,6 +12,14 @@ import type {
   Verdict,
 } from "./types";
 
+// Empty keeps the same-origin /api proxy used by Docker and local Vite development.
+// Set VITE_API_BASE_URL at build time for a separately hosted static frontend.
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+
+export function apiUrl(path: string): string {
+  return `${apiBaseUrl}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -42,7 +50,7 @@ async function errorFrom(res: Response): Promise<ApiError> {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     headers: { ...authHeaders(), ...(init.headers ?? {}) },
   });
@@ -87,7 +95,7 @@ export const api = {
 
   /** Downloads go through fetch so the API key header is sent. */
   async download(id: string, format: ExportFormat, style: Style): Promise<void> {
-    const res = await fetch(`/api/v1/checks/${id}/export?format=${format}&style=${style}`, {
+    const res = await fetch(apiUrl(`/api/v1/checks/${id}/export?format=${format}&style=${style}`), {
       headers: authHeaders(),
     });
     if (!res.ok) throw await errorFrom(res);
